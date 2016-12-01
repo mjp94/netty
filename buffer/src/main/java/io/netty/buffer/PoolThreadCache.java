@@ -55,15 +55,10 @@ final class PoolThreadCache {
     private final int numShiftsNormalHeap;
     private final int freeSweepAllocationThreshold;
 
-    private int allocations;
+    private final Thread deathWatchThread;
+    private final Runnable freeTask;
 
-    private final Thread thread = Thread.currentThread();
-    private final Runnable freeTask = new Runnable() {
-        @Override
-        public void run() {
-            free0();
-        }
-    };
+    private int allocations;
 
     // TODO: Test if adding padding helps under contention
     //private long pad0, pad1, pad2, pad3, pad4, pad5, pad6, pad7;
@@ -120,9 +115,25 @@ final class PoolThreadCache {
             numShiftsNormalHeap = -1;
         }
 
-        // The thread-local cache will keep a list of pooled buffers which must be returned to
-        // the pool when the thread is not alive anymore.
-        ThreadDeathWatcher.watch(thread, freeTask);
+        // We only need to watch the thread when any cache is used.
+        if (tinySubPageDirectCaches != null || smallSubPageDirectCaches != null || normalDirectCaches != null
+                || tinySubPageHeapCaches != null || smallSubPageHeapCaches != null || normalHeapCaches != null) {
+            freeTask = new Runnable() {
+                @Override
+                public void run() {
+                    free0(Thread.currentThread());
+                }
+            };
+
+            deathWatchThread = Thread.currentThread();
+
+            // The thread-local cache will keep a list of pooled buffers which must be returned to
+            // the pool when the thread is not alive anymore.
+            ThreadDeathWatcher.watch(deathWatchThread, freeTask);
+        } else {
+            freeTask = null;
+            deathWatchThread = null;
+        }
     }
 
     private static <T> MemoryRegionCache<T>[] createSubPageCaches(
@@ -231,11 +242,14 @@ final class PoolThreadCache {
      *  Should be called if the Thread that uses this cache is about to exist to release resources out of the cache
      */
     void free() {
-        ThreadDeathWatcher.unwatch(thread, freeTask);
-        free0();
+        if (freeTask != null) {
+            assert deathWatchThread != null;
+            ThreadDeathWatcher.unwatch(deathWatchThread, freeTask);
+        }
+        free0(Thread.currentThread());
     }
 
-    private void free0() {
+    private void free0(Thread thread) {
         int numFreed = free(tinySubPageDirectCaches) +
                 free(smallSubPageDirectCaches) +
                 free(normalDirectCaches) +
