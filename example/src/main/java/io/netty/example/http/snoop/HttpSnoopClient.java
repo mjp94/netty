@@ -45,6 +45,13 @@ public final class HttpSnoopClient {
     public static void main(String[] args) throws Exception {
         URI uri = new URI(URL);
         String scheme = uri.getScheme() == null? "http" : uri.getScheme();
+        
+//      return if url scheme is not http(s)
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+            System.err.println("Only HTTP(S) is supported.");
+            return;
+        }
+        
         String host = uri.getHost() == null? "127.0.0.1" : uri.getHost();
         int port = uri.getPort();
         if (port == -1) {
@@ -54,12 +61,7 @@ public final class HttpSnoopClient {
                 port = 443;
             }
         }
-
-        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-            System.err.println("Only HTTP(S) is supported.");
-            return;
-        }
-
+        
         // Configure SSL context if necessary.
         final boolean ssl = "https".equalsIgnoreCase(scheme);
         final SslContext sslCtx;
